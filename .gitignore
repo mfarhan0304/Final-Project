@@ -1,0 +1,11 @@
+./sid
+./steps
+./utils
+
+./data/init/dataset
+./data/train*
+./data/eval*
+
+./mfcc
+
+./exp/
