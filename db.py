@@ -29,12 +29,12 @@ class MyDB(object):
         except mysql.connector.DatabaseError:
             sys.exit("An error has occured!")
     
-    def fetch(self, query):
-        self._db_cur.execute(query)
+    def fetch(self, query, params):
+        self._db_cur.execute(query, params)
         return self._db_cur.fetchone()
     
-    def update(self, query):
-        self._db_cur.execute(query)
+    def update(self, query, params):
+        self._db_cur.execute(query, params)
         self._db_conn.commit()
     
     def getLastId(self):

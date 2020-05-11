@@ -23,14 +23,19 @@ def login():
     """
     username = request.form['username']
     file = request.files['voice']
-    file.save("tdsv/apps/data/{file.filename}")
+    file.save("./apps/audio/test.wav")
     
-    query = "SELECT id, gender FROM users where username = '{username}'"
-    rc = call(['tdsv/verify.sh', id, gender])
-    row = myDB.fetch(query)
-    response = {'username': username, 'statusCode': '200', 'statusMessage': 'Success'}
-    return jsonify(response)
-
+    query = "SELECT sex, model_location FROM users where username = %s"
+    params = (username,)
+    row = myDB.fetch(query, params)
+    print(row[0])
+    rc = call(["./verify.sh", username, row[0]])
+    if rc == "true":
+        response = {'username': username, 'statusCode': '200', 'statusMessage': 'Success'}
+        return jsonify(response)
+    else:
+        response = {'username': username, 'statusCode': '100', 'statusMessage': 'Username and voice doesnt match'}
+        return jsonify(response)
 # POST
 @app.route('/api/auth/register', methods=['POST'])
 def register():
@@ -39,21 +44,28 @@ def register():
     :return: json
     """
     username = request.form['username']
-    gender = request.form['gender']
+    gender = request.form['gender'][0].lower()
+    i = 0
     for file in request.files.getlist('voice'):
-        file.save(f"tdsv/apps/data/{file.filename}")
+        file.save(f"./apps/audio/enroll{i}.wav")
+        i += 1
     
-    query = "SELECT username FROM users where username = '{username}'"
-    row = myDB.fetch(query)
+    query = "SELECT id FROM users where username = %s"
+    params = (username,)
+    row = myDB.fetch(query, params)
     if row != None:
-        response = {'username': username, statusCode': 200, 'statusMessage': 'Username is already taken'}
+        response = {'username': username, 'statusCode': 200, 'statusMessage': 'Username is already taken'}
         return jsonify(response)
-    
-    id = myDB.getLastId()+1
-    model_location = call("tdsv/enroll.sh", id, gender)
-
-    query = "INSERT INTO users (username, model_location) VALUES ('{username}', '{model_location}')"
-    myDB.update(query)
+    id = "001"
+    try:
+        id = myDB.getLastId()+1
+    except:
+        print("First user")
+    rc = call(["./enroll.sh", username, gender])
+    query = "INSERT INTO users (username, sex) VALUES (%s, %s)"
+    params = (username, gender)
+    print(params)
+    myDB.update(query, params)
     response = {'username': username, 'statusCode': '200', 'statusMessage': 'Success'}
     return jsonify(response)
     

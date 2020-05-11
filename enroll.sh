@@ -32,7 +32,7 @@ utils/fix_data_dir.sh ${rootdir}
 sid/extract_ivectors.sh --nj 1 --cmd "$enroll_cmd" \
   exp/extractor ${rootdir} ${featsdir}
 
-echo $featsdir
+echo "success"
 #$train_cmd exp/convertion/log/feat_to_post.log \
 #  feat-to-post scp:exp/ivectors_enroll/ivector.scp \
 #  ark:exp/ivectors_enroll/ivector.post

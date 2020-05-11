@@ -10,15 +10,16 @@ fi
 
 id=$1
 gender=$2
-threshold=-4.124
+threshold=-6.91388
 rootdir=./apps/${id}/test
 featsdir=${rootdir}/feats
 
 mkdir -p $rootdir
 
-cp ./apps/wav_enroll.scp $rootdir/wav.scp
+cp ./apps/wav_verify.scp $rootdir/wav.scp
 echo "${id} ${gender}" > $rootdir/spk2gender
-echo "${id} enroll0 enroll1 enroll2 enroll3 enroll4" > $rootdir/spk2utt
+echo "${id} test" > $rootdir/spk2utt
+echo "${id} test target" > $rootdir/trial
 utils/spk2utt_to_utt2spk.pl $rootdir/spk2utt > $rootdir/utt2spk
 
 
@@ -35,9 +36,9 @@ sid/extract_ivectors.sh --nj 1 --cmd "$enroll_cmd" \
 
 local/plda_scoring.sh --use-existing-models true data/train ${rootdir}/../enroll ${rootdir} \
   exp/ivectors_train ${rootdir}/../enroll/feats ${featsdir} \
-  ${rootdir}/scores
+  "${id} test" ${rootdir}/scores
 
-score = `awk '{print $NF}' ${rootdir}/scores/plda_scores`
+score=`awk '{print $NF}' ${rootdir}/scores/plda_scores`
 if (( $(echo "$score >= $threshold" | bc -l) )); then
   echo "true";
 else
