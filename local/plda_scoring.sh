@@ -6,7 +6,7 @@
 
 use_existing_models=false
 use_lda=false
-simple_length_norm=false # If true, replace the default length normalization
+simple_length_norm=true # If true, replace the default length normalization
                          # performed in PLDA by an alternative that
                          # normalizes the length of the iVectors to be equal
                          # to the square root of the iVector dimension.
