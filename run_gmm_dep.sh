@@ -29,8 +29,8 @@ trials_female=data/eval_test_female/trials
 trials_male=data/eval_test_male/trials
 
 nj=10
-stage=0
-var=198
+stage=6
+var=188
 if [ $stage -le 0 ]; then
   # Path to some, but not all of the training corpora
   data_root="./data/init"
@@ -58,7 +58,7 @@ if [ $stage -le 2 ]; then
   # Train the UBM.
   sid/train_diag_ubm.sh --cmd "$train_cmd" \
     --nj $nj --num-threads 8 \
-    data/train 1024 \
+    data/train 512 \
     exp/diag_ubm
 
   sid/train_full_ubm.sh --cmd "$train_cmd" \
@@ -155,14 +155,6 @@ if [ $stage -le 5 ]; then
 fi
 
 if [ $stage -le 6 ]; then
-  # Decrease the dimensionality prior to PLDA using LDA.
-  lda_dim=150
-#  lda_dim=$((var/2))
-  $train_cmd exp/ivectors_train/log/lda.log \
-    ivector-compute-lda --total-covariance-factor=0.0 --dim=$lda_dim \
-    "ark:ivector-subtract-global-mean scp:exp/ivectors_train/ivector.scp ark:- |" \
-    ark:data/train/utt2spk exp/ivectors_train/transform.mat || exit 1;
-
   #  Create a gender independent PLDA model and do scoring
   local/plda_scoring.sh --use-lda true data/train data/eval_enroll data/eval_test \
     exp/ivectors_train exp/ivectors_eval_enroll exp/ivectors_eval_test $trials \
@@ -173,15 +165,6 @@ if [ $stage -le 6 ]; then
   local/plda_scoring.sh --use-existing-models true --use-lda true data/train data/eval_enroll_male data/eval_test_male \
     exp/ivectors_train exp/ivectors_eval_enroll_male exp/ivectors_eval_test_male $trials_male \
     exp/scores_ind_male
-
-  $train_cmd exp/ivectors_train_female/log/lda.log \
-    ivector-compute-lda --total-covariance-factor=0.0 --dim=$lda_dim \
-    "ark:ivector-subtract-global-mean scp:exp/ivectors_train_female/ivector.scp ark:- |" \
-    ark:data/train_female/utt2spk exp/ivectors_train_female/transform.mat || exit 1;
-  $train_cmd exp/ivectors_train_male/log/lda.log \
-    ivector-compute-lda --total-covariance-factor=0.0 --dim=$lda_dim \
-    "ark:ivector-subtract-global-mean scp:exp/ivectors_train_male/ivector.scp ark:- |" \
-    ark:data/train_male/utt2spk exp/ivectors_train_male/transform.mat || exit 1;
 
   local/plda_scoring.sh --use-lda true data/train_female data/eval_enroll_female data/eval_test_female \
     exp/ivectors_train_female exp/ivectors_eval_enroll_female exp/ivectors_eval_test_female $trials_female \

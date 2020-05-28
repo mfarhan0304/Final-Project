@@ -29,7 +29,7 @@ trials_female=data/eval_test_female/trials
 trials_male=data/eval_test_male/trials
 
 nj=10
-stage=2
+stage=0
 if [ $stage -le 0 ]; then
   # Path to some, but not all of the training corpora
   data_root="./data/init"
@@ -68,7 +68,7 @@ if [ $stage -le 3 ]; then
   # Train the i-vector extractor
   sid/train_ivector_extractor.sh --cmd "$train_cmd" \
     --nj 1 --num-threads 8 --num-processes 8 \
-    --ivector-dim 198 \
+    --ivector-dim 188 \
     --num-iters 5 \
     exp/full_ubm/final.ubm data/train \
     exp/extractor
@@ -110,22 +110,7 @@ if [ $stage -le 6 ]; then
     exp/scores_ind_male
 fi
 
-#if [ $stage -le 7 ]; then
-#  #  Create a gender dependent PLDA model and do scoring
-#  local/plda_scoring.sh data/train_female data/eval_enroll_female data/eval_test_female \
-#    exp/ivectors_train_female exp/ivectors_eval_enroll_female exp/ivectors_eval_test_female $trials_female \
-#    exp/scores_dep_female
-#  local/plda_scoring.sh data/train_male data/eval_enroll_male data/eval_test_male \
-#    exp/ivectors_train_male exp/ivectors_eval_enroll_male exp/ivectors_eval_test_male $trials_male \
-#    exp/scores_dep_male
-
-#  # Pool the gender dependent results.
-#  mkdir -p exp/scores_dep_pooled
-#  cat exp/scores_dep_male/plda_scores exp/scores_dep_female/plda_scores \
-#      > exp/scores_dep_pooled/plda_scores
-#fi
-
-if [ $stage -le 8 ]; then
+if [ $stage -le 7 ]; then
   echo "GMM EER"
   for x in ind; do
     for y in female male pooled; do
