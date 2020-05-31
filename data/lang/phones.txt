@@ -1,0 +1,10 @@
+<eps> 0
+OOV 1
+SIL 2
+ADALAH 3
+KATA 4
+SANDI 5
+SAYA 6
+SUARA 7
+#0 8
+#1 9

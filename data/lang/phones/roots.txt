@@ -1,0 +1,7 @@
+shared split OOV
+shared split SIL
+shared split ADALAH
+shared split KATA
+shared split SANDI
+shared split SAYA
+shared split SUARA
