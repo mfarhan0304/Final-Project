@@ -55,7 +55,7 @@ if [ $stage -le 2 ]; then
   # Train the UBM.
   sid/train_diag_ubm.sh --cmd "$train_cmd" \
     --nj $nj --num-threads 8 \
-    data/train 512 \
+    data/train 32 \
     exp/diag_ubm
 
   sid/train_full_ubm.sh --cmd "$train_cmd" \
@@ -67,8 +67,8 @@ fi
 if [ $stage -le 3 ]; then
   # Train the i-vector extractor
   sid/train_ivector_extractor.sh --cmd "$train_cmd" \
-    --nj 1 --num-threads 8 --num-processes 8 \
-    --ivector-dim 188 \
+    --nj $nj --num-threads 8 --num-processes 8 \
+    --ivector-dim 100 \
     --num-iters 5 \
     exp/full_ubm/final.ubm data/train \
     exp/extractor

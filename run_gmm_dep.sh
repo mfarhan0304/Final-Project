@@ -29,8 +29,9 @@ trials_female=data/eval_test_female/trials
 trials_male=data/eval_test_male/trials
 
 nj=10
-stage=6
-var=188
+stage=3
+gaus=32
+var=100
 if [ $stage -le 0 ]; then
   # Path to some, but not all of the training corpora
   data_root="./data/init"
@@ -45,7 +46,7 @@ fi
 
 if [ $stage -le 1 ]; then
   # Make MFCCs and compute the energy-based VAD for each dataset
-  for name in train train_female train_male eval_enroll eval_enroll_female eval_enroll_male eval_test eval_test_female eval_test_male; do
+  for name in train_female train_male eval_enroll_female eval_enroll_male eval_test_female eval_test_male; do
     steps/make_mfcc.sh --nj $nj --cmd "$train_cmd" data/${name} exp/make_mfcc $mfccdir
     steps/compute_cmvn_stats.sh data/${name} exp/make_mfcc $mfccdir
     utils/fix_data_dir.sh data/${name}
@@ -56,35 +57,34 @@ fi
 
 if [ $stage -le 2 ]; then
   # Train the UBM.
+#  sid/train_diag_ubm.sh --cmd "$train_cmd" \
+#    --nj $nj --num-threads 8 \
+#    data/train $gaus \
+#    exp/diag_ubm
+
   sid/train_diag_ubm.sh --cmd "$train_cmd" \
     --nj $nj --num-threads 8 \
-    data/train 512 \
-    exp/diag_ubm
+    data/train_female $gaus \
+    exp/diag_ubm_female
 
-  sid/train_full_ubm.sh --cmd "$train_cmd" \
-    --nj $nj --remove-low-count-gaussians false \
-    data/train \
-    exp/diag_ubm exp/full_ubm
+  sid/train_diag_ubm.sh --cmd "$train_cmd" \
+    --nj $nj --num-threads 8 \
+    data/train_male $gaus \
+    exp/diag_ubm_male
 
   sid/train_full_ubm.sh --cmd "$train_cmd" \
     --nj $nj --remove-low-count-gaussians false \
     data/train_female \
-    exp/diag_ubm exp/full_ubm_female
+    exp/diag_ubm_female exp/full_ubm_female
+
   sid/train_full_ubm.sh --cmd "$train_cmd" \
     --nj $nj --remove-low-count-gaussians false \
     data/train_male \
-    exp/diag_ubm exp/full_ubm_male
+    exp/diag_ubm_male exp/full_ubm_male
 fi
 
 if [ $stage -le 3 ]; then
   # Train the i-vector extractor
-  sid/train_ivector_extractor.sh --cmd "$train_cmd" \
-    --nj 1 --num-threads 8 --num-processes 8 \
-    --ivector-dim $var \
-    --num-iters 5 \
-    exp/full_ubm/final.ubm data/train \
-    exp/extractor
-
   sid/train_ivector_extractor.sh --cmd "$train_cmd" \
     --nj 1 --num-threads 8 --num-processes 8 \
     --ivector-dim $var \
@@ -102,19 +102,6 @@ fi
 
 if [ $stage -le 4 ]; then
   # Extract i-vectors for the data. We'll use this for things like LDA or PLDA.
-  # The train data
-  sid/extract_ivectors.sh --cmd "$train_cmd" --nj $nj \
-    exp/extractor data/train \
-    exp/ivectors_train
-  # The eval enroll data
-  sid/extract_ivectors.sh --cmd "$train_cmd" --nj $nj \
-    exp/extractor data/eval_enroll \
-    exp/ivectors_eval_enroll
-  # The eval test data
-  sid/extract_ivectors.sh --cmd "$train_cmd" --nj $nj \
-    exp/extractor data/eval_test \
-    exp/ivectors_eval_test
-
   # The train data
   sid/extract_ivectors.sh --cmd "$train_cmd" --nj $nj \
     exp/extractor_female data/train_female \
@@ -143,9 +130,6 @@ if [ $stage -le 4 ]; then
 fi
 
 if [ $stage -le 5 ]; then
-  $train_cmd exp/ivectors_train/log/compute_mean.log \
-    ivector-mean scp:exp/ivectors_train/ivector.scp \
-    exp/ivectors_train/mean.vec || exit 1;
   $train_cmd exp/ivectors_train_female/log/compute_mean.log \
     ivector-mean scp:exp/ivectors_train_female/ivector.scp \
     exp/ivectors_train_female/mean.vec || exit 1;
@@ -156,20 +140,10 @@ fi
 
 if [ $stage -le 6 ]; then
   #  Create a gender independent PLDA model and do scoring
-  local/plda_scoring.sh --use-lda true data/train data/eval_enroll data/eval_test \
-    exp/ivectors_train exp/ivectors_eval_enroll exp/ivectors_eval_test $trials \
-    exp/scores_ind_pooled
-  local/plda_scoring.sh --use-existing-models true --use-lda true data/train data/eval_enroll_female data/eval_test_female \
-    exp/ivectors_train exp/ivectors_eval_enroll_female exp/ivectors_eval_test_female $trials_female \
-    exp/scores_ind_female
-  local/plda_scoring.sh --use-existing-models true --use-lda true data/train data/eval_enroll_male data/eval_test_male \
-    exp/ivectors_train exp/ivectors_eval_enroll_male exp/ivectors_eval_test_male $trials_male \
-    exp/scores_ind_male
-
-  local/plda_scoring.sh --use-lda true data/train_female data/eval_enroll_female data/eval_test_female \
+  local/plda_scoring.sh --use-lda false data/train_female data/eval_enroll_female data/eval_test_female \
     exp/ivectors_train_female exp/ivectors_eval_enroll_female exp/ivectors_eval_test_female $trials_female \
     exp/scores_dep_female
-  local/plda_scoring.sh --use-lda true data/train_male data/eval_enroll_male data/eval_test_male \
+  local/plda_scoring.sh --use-lda false data/train_male data/eval_enroll_male data/eval_test_male \
     exp/ivectors_train_male exp/ivectors_eval_enroll_male exp/ivectors_eval_test_male $trials_male \
     exp/scores_dep_male
 
@@ -181,7 +155,7 @@ fi
 
 if [ $stage -le 7 ]; then
   echo "GMM"
-  for x in ind dep; do
+  for x in dep; do
     for y in female male pooled; do
       eer=`compute-eer <(python local/prepare_for_eer.py $trials exp/scores_${x}_${y}/plda_scores) 2> exp/scores_${x}_${y}/plda_score.log`
       echo "${x} ${y}: $eer"
