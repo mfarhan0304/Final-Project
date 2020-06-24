@@ -37,7 +37,7 @@ else
   if [ "$use_lda" == "true" ]; then
     # Decrease the dimensionality prior to PLDA using LDA.
     $train_cmd $train_ivec_dir/log/lda.log \
-      ivector-compute-lda --total-covariance-factor=0.0 --dim=88 \
+      ivector-compute-lda --total-covariance-factor=0.0 --dim=100 \
       "ark:ivector-subtract-global-mean scp:${train_ivec_dir}/ivector.scp ark:- |" \
       ark:${train_data_dir}/utt2spk $train_ivec_dir/transform.mat || exit 1;
 

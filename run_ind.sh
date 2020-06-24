@@ -1,25 +1,15 @@
 #!/usr/bin/env bash
-# Copyright      2017   David Snyder
-#                2017   Johns Hopkins University (Author: Daniel Garcia-Romero)
-#                2017   Johns Hopkins University (Author: Daniel Povey)
-# Apache 2.0.
-#
-# See README.txt for more info on data required.
-# Results (mostly EERs) are inline in comments below.
-#
-# This example demonstrates a "bare bones" NIST SRE 2016 recipe using ivectors.
-# It is closely based on "X-vectors: Robust DNN Embeddings for Speaker
-# Recognition" by Snyder et al.  In the future, we will add score-normalization
-# and a more effective form of PLDA domain adaptation.
-#
-# Pretrained models are available for this recipe.  See
-# http://kaldi-asr.org/models.html and
-# https://david-ryan-snyder.github.io/2017/10/04/model_sre16_v2.html
-# for details.
+
+nj=10
+stage=0
+type="GMM"
+gaus=32
+dim=100
 
 . ./cmd.sh
 . ./path.sh
-set -e
+. utils/parse_options.sh
+
 mfccdir=`pwd`/mfcc
 vaddir=`pwd`/mfcc
 
@@ -28,9 +18,12 @@ trials=data/eval_test/trials
 trials_female=data/eval_test_female/trials
 trials_male=data/eval_test_male/trials
 
-nj=10
-stage=8
+white='\033[1;37m'
+reset=`tput sgr0`
 if [ $stage -le 0 ]; then
+  rm -rf data/train*
+  rm -rf data/eval_*
+
   # Path to some, but not all of the training corpora
   data_root="./data/init"
 
@@ -41,6 +34,9 @@ if [ $stage -le 0 ]; then
 fi
 
 if [ $stage -le 1 ]; then
+  rm -rf mfcc/
+  rm -rf exp/make_*
+
   # Make MFCCs and compute the energy-based VAD for each dataset
   for name in train eval_enroll eval_test; do
     steps/make_mfcc.sh --nj $nj --cmd "$train_cmd" data/${name} exp/make_mfcc $mfccdir
@@ -51,7 +47,9 @@ if [ $stage -le 1 ]; then
   done
 fi
 
-if [ $stage -le 2 ]; then
+if [ $stage -le 2 -a $type = "HMM" ]; then
+  rm -rf exp/mono*
+
   steps/train_mono.sh --boost-silence 1.25 --cmd "$train_cmd" \
     data/train data/lang exp/mono
   steps/align_si.sh --boost-silence 1.25 --cmd "$train_cmd" \
@@ -59,34 +57,51 @@ if [ $stage -le 2 ]; then
 fi
 
 if [ $stage -le 3 ]; then
+  rm -rf exp/diag_ubm*
+  rm -rf exp/full_ubm*
+
   # Train the UBM.
-  steps/train_ubm.sh --cmd "$train_cmd" 128 \
-    data/train data/lang exp/mono_ali \
-    exp/hmm_ubm
+  if [ $type = "HMM" ]; then
+    steps/train_ubm.sh --cmd "$train_cmd" $gaus \
+      data/train data/lang exp/mono_ali \
+      exp/full_ubm
+  elif [ $type = "GMM" ]; then
+    sid/train_diag_ubm.sh --cmd "$train_cmd" \
+      --nj $nj --num-threads 8 \
+      data/train $gaus \
+      exp/diag_ubm
+
+    sid/train_full_ubm.sh --cmd "$train_cmd" \
+      --nj $nj --remove-low-count-gaussians false \
+      data/train \
+      exp/diag_ubm exp/full_ubm
+  fi
 fi
 
 if [ $stage -le 4 ]; then
+  rm -rf exp/extractor*
+
   # Train the i-vector extractor
   sid/train_ivector_extractor.sh --cmd "$train_cmd" \
     --nj 1 --num-threads 8 --num-processes 8 \
-    --ivector-dim 250 \
+    --ivector-dim $dim \
     --num-iters 5 \
-    exp/hmm_ubm/final.ubm data/train \
+    exp/full_ubm/final.ubm data/train \
     exp/extractor
 fi
 
 if [ $stage -le 5 ]; then
+  rm -rf exp/ivectors*
+
   # Extract i-vectors for the data. We'll use this for things like LDA or PLDA.
   # The train data
   sid/extract_ivectors.sh --cmd "$train_cmd" --nj $nj \
     exp/extractor data/train \
     exp/ivectors_train
-
   # The eval enroll data
   sid/extract_ivectors.sh --cmd "$train_cmd" --nj $nj \
     exp/extractor data/eval_enroll \
     exp/ivectors_eval_enroll
-
   # The eval test data
   sid/extract_ivectors.sh --cmd "$train_cmd" --nj $nj \
     exp/extractor data/eval_test \
@@ -98,7 +113,9 @@ if [ $stage -le 6 ]; then
     exp/ivectors_train exp/ivectors_eval_enroll exp/ivectors_eval_test
 fi
 
-if [ $stage -le 6 ]; then
+if [ $stage -le 7 ]; then
+  rm -rf exp/scores*
+
   #  Create a gender independent PLDA model and do scoring
   local/plda_scoring.sh data/train data/eval_enroll data/eval_test \
     exp/ivectors_train exp/ivectors_eval_enroll exp/ivectors_eval_test $trials \
@@ -111,25 +128,13 @@ if [ $stage -le 6 ]; then
     exp/scores_ind_male
 fi
 
-if [ $stage -le 7 ]; then
-  #  Create a gender independent PLDA model and do scoring
-  local/cosine_scoring.sh data/eval_enroll data/eval_test \
-    exp/ivectors_eval_enroll exp/ivectors_eval_test $trials \
-    exp/scores_ind_pooled
-  local/cosine_scoring.sh data/eval_enroll_female data/eval_test_female \
-    exp/ivectors_eval_enroll_female exp/ivectors_eval_test_female $trials_female \
-    exp/scores_ind_female
-  local/cosine_scoring.sh data/eval_enroll_male data/eval_test_male \
-    exp/ivectors_eval_enroll_male exp/ivectors_eval_test_male $trials_male \
-    exp/scores_ind_male
-fi
-
 if [ $stage -le 8 ]; then
-  echo "HMM-ind EER"
+  echo -e "${white}EER ${type} ${gaus} ${dim}"
   for x in ind; do
     for y in female male pooled; do
-      eer=`compute-eer <(python local/prepare_for_eer.py $trials exp/scores_${x}_${y}/cosine_scores) 2> exp/scores_${x}_${y}/cosine_score.log`
+      eer=`compute-eer <(python local/prepare_for_eer.py $trials exp/scores_${x}_${y}/plda_scores) 2> exp/scores_${x}_${y}/plda_score.log`
       echo "${x} ${y}: $eer"
     done
   done
+  echo $reset
 fi

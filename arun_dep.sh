@@ -1,25 +1,13 @@
 #!/usr/bin/env bash
-# Copyright      2017   David Snyder
-#                2017   Johns Hopkins University (Author: Daniel Garcia-Romero)
-#                2017   Johns Hopkins University (Author: Daniel Povey)
-# Apache 2.0.
-#
-# See README.txt for more info on data required.
-# Results (mostly EERs) are inline in comments below.
-#
-# This example demonstrates a "bare bones" NIST SRE 2016 recipe using ivectors.
-# It is closely based on "X-vectors: Robust DNN Embeddings for Speaker
-# Recognition" by Snyder et al.  In the future, we will add score-normalization
-# and a more effective form of PLDA domain adaptation.
-#
-# Pretrained models are available for this recipe.  See
-# http://kaldi-asr.org/models.html and
-# https://david-ryan-snyder.github.io/2017/10/04/model_sre16_v2.html
-# for details.
+
+nj=10
+type="GMM"
+stage=0
 
 . ./cmd.sh
 . ./path.sh
-set -e
+. utils/parse_options.sh
+
 mfccdir=`pwd`/mfcc
 vaddir=`pwd`/mfcc
 
@@ -28,8 +16,8 @@ trials=data/eval_test/trials
 trials_female=data/eval_test_female/trials
 trials_male=data/eval_test_male/trials
 
-nj=10
-stage=0
+white='\033[1;37m'
+reset=`tput sgr0`
 if [ $stage -le 0 ]; then
   rm -rf data/train*
   rm -rf data/eval_*
@@ -59,7 +47,7 @@ if [ $stage -le 1 ]; then
   done
 fi
 
-if [ $stage -le 2 ]; then
+if [ $stage -le 2 -a $type = "HMM" ]; then
   rm -rf mono*
 
   steps/train_mono.sh --boost-silence 1.25 --cmd "$train_cmd" \
@@ -73,19 +61,42 @@ if [ $stage -le 2 ]; then
     data/train_male data/lang exp/mono_male exp/mono_ali_male
 fi
 
-for gaus in 128 64 32; do
-  rm -rf exp/hmm_ubm_*
+for gaus in 32 64 128; do
+  rm -rf exp/diag_ubm_*
+  rm -rf exp/full_ubm_*
 
-  # Train the UBM.
-  steps/train_ubm.sh --cmd "$train_cmd" ${gaus} \
-    data/train_female data/lang exp/mono_ali_female \
-    exp/hmm_ubm_female
+  if [ $type = "HMM" ]; then
+    # Train the UBM.
+    steps/train_ubm.sh --cmd "$train_cmd" ${gaus} \
+      data/train_female data/lang exp/mono_ali_female \
+      exp/full_ubm_female
 
-  steps/train_ubm.sh --cmd "$train_cmd" ${gaus} \
-    data/train_male data/lang exp/mono_ali_male \
-    exp/hmm_ubm_male
+    steps/train_ubm.sh --cmd "$train_cmd" ${gaus} \
+      data/train_male data/lang exp/mono_ali_male \
+      exp/full_ubm_male
+  elif [ $type = "GMM" ]; then
+    sid/train_diag_ubm.sh --cmd "$train_cmd" \
+      --nj $nj --num-threads 8 \
+      data/train_female ${gaus} \
+      exp/diag_ubm_female
 
-  for dim in 250 175 100; do
+    sid/train_diag_ubm.sh --cmd "$train_cmd" \
+      --nj $nj --num-threads 8 \
+      data/train_male ${gaus} \
+      exp/diag_ubm_male
+
+    sid/train_full_ubm.sh --cmd "$train_cmd" \
+      --nj $nj --remove-low-count-gaussians false \
+      data/train_female \
+      exp/diag_ubm_female exp/full_ubm_female
+
+    sid/train_full_ubm.sh --cmd "$train_cmd" \
+      --nj $nj --remove-low-count-gaussians false \
+      data/train_male \
+      exp/diag_ubm_male exp/full_ubm_male
+  fi
+
+  for dim in 100 175 250; do
     rm -rf exp/extractor_*
     rm -rf exp/ivectors_*
     rm -rf exp/scores_*
@@ -95,14 +106,14 @@ for gaus in 128 64 32; do
       --nj 1 --num-threads 8 --num-processes 8 \
       --ivector-dim ${dim} \
       --num-iters 5 \
-      exp/hmm_ubm_female/final.ubm data/train_female \
+      exp/full_ubm_female/final.ubm data/train_female \
       exp/extractor_female
 
     sid/train_ivector_extractor.sh --cmd "$train_cmd" \
       --nj 1 --num-threads 8 --num-processes 8 \
       --ivector-dim ${dim} \
       --num-iters 5 \
-      exp/hmm_ubm_male/final.ubm data/train_male \
+      exp/full_ubm_male/final.ubm data/train_male \
       exp/extractor_male
 
     # Extract i-vectors for the data. We'll use this for things like LDA or PLDA.
@@ -152,12 +163,13 @@ for gaus in 128 64 32; do
     cat exp/scores_dep_male/plda_scores exp/scores_dep_female/plda_scores \
       > exp/scores_dep_pooled/plda_scores
 
-    echo "HMM-dep EER ${gaus} ${dim}"
+    echo -e "${white}EER ${type}-dep ${gaus} ${dim}"
     for x in dep; do
       for y in female male pooled; do
         eer=`compute-eer <(python local/prepare_for_eer.py $trials exp/scores_${x}_${y}/plda_scores) 2> exp/scores_${x}_${y}/plda_score.log`
         echo "${x} ${y}: $eer"
       done
     done
+    echo $reset
   done
 done

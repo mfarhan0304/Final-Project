@@ -1,25 +1,13 @@
 #!/usr/bin/env bash
-# Copyright      2017   David Snyder
-#                2017   Johns Hopkins University (Author: Daniel Garcia-Romero)
-#                2017   Johns Hopkins University (Author: Daniel Povey)
-# Apache 2.0.
-#
-# See README.txt for more info on data required.
-# Results (mostly EERs) are inline in comments below.
-#
-# This example demonstrates a "bare bones" NIST SRE 2016 recipe using ivectors.
-# It is closely based on "X-vectors: Robust DNN Embeddings for Speaker
-# Recognition" by Snyder et al.  In the future, we will add score-normalization
-# and a more effective form of PLDA domain adaptation.
-#
-# Pretrained models are available for this recipe.  See
-# http://kaldi-asr.org/models.html and
-# https://david-ryan-snyder.github.io/2017/10/04/model_sre16_v2.html
-# for details.
+
+nj=10
+type="GMM"
+stage=0
 
 . ./cmd.sh
 . ./path.sh
-set -e
+. utils/parse_options.sh
+
 mfccdir=`pwd`/mfcc
 vaddir=`pwd`/mfcc
 
@@ -28,8 +16,8 @@ trials=data/eval_test/trials
 trials_female=data/eval_test_female/trials
 trials_male=data/eval_test_male/trials
 
-nj=10
-stage=0
+white='\033[1;37m'
+reset=`tput sgr0`
 if [ $stage -le 0 ]; then
   rm -rf data/train*
   rm -rf data/eval_*
@@ -57,22 +45,37 @@ if [ $stage -le 1 ]; then
   done
 fi
 
-for gaus in 128 64 32; do
+if [ $stage -le 2 -a $type = "HMM" ]; then
+  rm -rf exp/mono*
+
+  steps/train_mono.sh --boost-silence 1.25 --cmd "$train_cmd" \
+    data/train data/lang exp/mono
+  steps/align_si.sh --boost-silence 1.25 --cmd "$train_cmd" \
+    data/train data/lang exp/mono exp/mono_ali
+fi
+
+for gaus in 32 64 128; do
   rm -rf exp/diag_ubm*
   rm -rf exp/full_ubm*
 
-  # Train the UBM.
-  sid/train_diag_ubm.sh --cmd "$train_cmd" \
-    --nj $nj --num-threads 8 \
-    data/train ${gaus} \
-    exp/diag_ubm
+  if [ $type = "GMM" ]; then
+    # Train the UBM.
+    sid/train_diag_ubm.sh --cmd "$train_cmd" \
+      --nj $nj --num-threads 8 \
+      data/train ${gaus} \
+      exp/diag_ubm
 
-  sid/train_full_ubm.sh --cmd "$train_cmd" \
-    --nj $nj --remove-low-count-gaussians false \
-    data/train \
-    exp/diag_ubm exp/full_ubm
+    sid/train_full_ubm.sh --cmd "$train_cmd" \
+      --nj $nj --remove-low-count-gaussians false \
+      data/train \
+      exp/diag_ubm exp/full_ubm
+  elif [ $type = "HMM" ]; then
+    steps/train_ubm.sh --cmd "$train_cmd" ${gaus} \
+      data/train data/lang exp/mono_ali \
+      exp/full_ubm
+  fi
 
-  for dim in 250 175 100; do
+  for dim in 100 175 250; do
     rm -rf exp/extractor*
     rm -rf exp/ivectors*
     rm -rf exp/scores*
@@ -115,12 +118,13 @@ for gaus in 128 64 32; do
       exp/ivectors_train exp/ivectors_eval_enroll_male exp/ivectors_eval_test_male $trials_male \
       exp/scores_ind_male
 
-    echo "GMM-ind EER ${gaus} ${dim}"
+    echo -e "${white}EER ${type}-ind ${gaus} ${dim}"
     for x in ind; do
       for y in female male pooled; do
         eer=`compute-eer <(python local/prepare_for_eer.py $trials exp/scores_${x}_${y}/plda_scores) 2> exp/scores_${x}_${y}/plda_score.log`
         echo "${x} ${y}: $eer"
       done
     done
+    echo $reset
   done
 done
